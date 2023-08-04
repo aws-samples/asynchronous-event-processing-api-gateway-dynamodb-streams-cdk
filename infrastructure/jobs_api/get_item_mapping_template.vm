@@ -1,0 +1,16 @@
+#set($inputRoot = $util.parseJson($input.json('$')))
+#set($jobStatusMap = $inputRoot.Item.job_status.M)
+{
+#foreach($entry in $jobStatusMap.entrySet())
+  $entry.getKey(): {
+    #set($state = $!{entry.getValue().M.state.S})
+    #set($results = $!{entry.getValue().M.results.S})
+    #if($state)
+      "state": "$state",
+    #end
+    #if($results)
+      "results": "$results",
+    #end
+  }
+#end
+}
