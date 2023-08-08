@@ -37,6 +37,7 @@ from pathlib import (
     Path,
 )
 
+
 class EventProcessingConstruct(Construct):
     def __init__(
         self,
@@ -155,7 +156,7 @@ class EventProcessingConstruct(Construct):
         )
 
         for consumer in range(consumers):
-            consumer_id = consumer+1
+            consumer_id = consumer + 1
             consumer_function = Function(
                 self,
                 f"Consumer{consumer_id}Function",
@@ -173,8 +174,8 @@ class EventProcessingConstruct(Construct):
                             "bash",
                             "-c",
                             ("cp /asset-input/main.py "
-                            "--target /asset-output "
-                            "--update"),
+                             "--target /asset-output "
+                             "--update"),
                         ],
                         image=Runtime.PYTHON_3_9.bundling_image,
                     ),
@@ -205,8 +206,8 @@ class EventProcessingConstruct(Construct):
                     filters=[
                         aws_lambda.FilterCriteria.filter(
                             {
-                                "eventName": aws_lambda.FilterRule.is_equal("INSERT")})],
-                ))
+                                "eventName": aws_lambda.FilterRule.is_equal("INSERT")}),
+                    ]))
 
             consumer_function.node.default_child.add_metadata(
                 "checkov",
