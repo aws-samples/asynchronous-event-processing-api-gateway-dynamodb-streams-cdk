@@ -26,10 +26,15 @@ from aws_cdk.aws_lambda import (
 )
 from aws_cdk.aws_lambda_destinations import (
     EventBridgeDestination,
-    LambdaDestination,
+    SnsDestination,
 )
-import aws_cdk.aws_lambda_event_sources as eventsources
-
+from aws_cdk.aws_lambda_event_sources import (
+    DynamoEventSource,
+    SnsEventSource,
+)
+from aws_cdk.aws_sns import (
+    Topic,
+)
 from constructs import (
     Construct,
 )
@@ -43,16 +48,17 @@ class EventProcessingConstruct(Construct):
         self,
         scope: Construct,
         construct_id: str,
+        consumers: int = 2,
         error_handling_timeout: int = 5,
         event_processing_timeout: int = 300,
         max_event_age: int = 21600,
+        max_record_age: int = 21600,
+        optmistic_locking_retry_attempts: int = 10,
         pending_window: int = 7,
         read_capacity: int = 5,
         removal_policy: RemovalPolicy = RemovalPolicy.DESTROY,
         reserved_concurrent_executions: int = 100,
         retry_attempts: int = 0,
-        optmistic_locking_retry_attempts: int = 10,
-        consumers: int = 2,
         write_capacity: int = 5,
     ) -> None:
         super().__init__(
@@ -60,6 +66,14 @@ class EventProcessingConstruct(Construct):
             construct_id,
         )
 
+        self.__error_handling_topic_key = Key(
+            self,
+            "ErrorHandlingTopicKey",
+            alias="alias/ErrorHandlingTopicKey",
+            enable_key_rotation=True,
+            pending_window=Duration.days(pending_window),
+            removal_policy=removal_policy,
+        )
         self.__failed_jobs_event_bus = EventBus(
             self,
             "FailedJobsEventBus",
@@ -154,6 +168,11 @@ class EventProcessingConstruct(Construct):
             runtime=Runtime.PYTHON_3_9,
             timeout=Duration.seconds(error_handling_timeout),
         )
+        self.__error_handling_topic = Topic(
+            self,
+            "ErrorHandlingTopic",
+            master_key=self.__error_handling_topic_key,
+        )
 
         for consumer in range(consumers):
             consumer_id = consumer + 1
@@ -182,33 +201,34 @@ class EventProcessingConstruct(Construct):
                 ),
                 environment={
                     "CONSUMER_ID": f"consumer_{consumer_id}",
+                    "OPTIMISTIC_LOCKING_RETRY_ATTEMPTS": str(optmistic_locking_retry_attempts),
                     "TABLE_NAME": self.jobs_table.table_name,
                     "TIMEOUT": str(event_processing_timeout),
-                    "OPTIMISTIC_LOCKING_RETRY_ATTEMPTS": str(optmistic_locking_retry_attempts),
                 },
                 handler="main.handler",
                 layers=[
                     self.__powertools_layer,
                 ],
-                max_event_age=Duration.seconds(max_event_age),
-                on_failure=LambdaDestination(self.__error_handling_function),
                 reserved_concurrent_executions=reserved_concurrent_executions,
-                retry_attempts=retry_attempts,
                 runtime=Runtime.PYTHON_3_9,
                 timeout=Duration.seconds(event_processing_timeout),
             )
 
             consumer_function.add_event_source(
-                eventsources.DynamoEventSource(
-                    self.jobs_table,
-                    starting_position=aws_lambda.StartingPosition.LATEST,
+                DynamoEventSource(
                     batch_size=1,
                     filters=[
                         aws_lambda.FilterCriteria.filter(
                             {
                                 "eventName": aws_lambda.FilterRule.is_equal("INSERT")}),
-                    ]))
-
+                    ],
+                    max_record_age=Duration.seconds(max_record_age),
+                    on_failure=SnsDestination(
+                        self.__error_handling_topic),
+                    retry_attempts=retry_attempts,
+                    starting_position=aws_lambda.StartingPosition.LATEST,
+                    table=self.jobs_table,
+                ))
             consumer_function.node.default_child.add_metadata(
                 "checkov",
                 {
@@ -231,9 +251,13 @@ class EventProcessingConstruct(Construct):
                     ],
                 },
             )
-
+            self.__error_handling_topic.grant_publish(consumer_function)
+            self.__error_handling_topic_key.grant_encrypt_decrypt(
+                consumer_function)
             self.jobs_table.grant_read_write_data(consumer_function)
 
+        self.__error_handling_function.add_event_source(
+            SnsEventSource(self.__error_handling_topic))
         self.__error_handling_function.node.default_child.add_metadata(
             "checkov",
             {

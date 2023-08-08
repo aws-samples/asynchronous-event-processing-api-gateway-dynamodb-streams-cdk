@@ -17,6 +17,8 @@ version = "1.0.0"
 
 [tool.pytest.ini_options]
 env = [
+  "CONSUMER_ID=consumer_1",
+  "OPTIMISTIC_LOCKING_RETRY_ATTEMPTS=1",
   "TABLE_NAME=jobs",
   "TIMEOUT=300",
 ]
