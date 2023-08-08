@@ -125,10 +125,10 @@ class EventProcessingConstruct(Construct):
                 name="id",
                 type=AttributeType.STRING,
             ),
-            stream=StreamViewType.NEW_IMAGE,
             point_in_time_recovery=True,
             read_capacity=read_capacity,
             removal_policy=removal_policy,
+            stream=StreamViewType.NEW_IMAGE,
             write_capacity=write_capacity,
         )
         self.__error_handling_function = Function(
@@ -216,7 +216,7 @@ class EventProcessingConstruct(Construct):
 
             consumer_function.add_event_source(
                 DynamoEventSource(
-                    batch_size=1,
+                    batch_size=1, # Ensure processing of one event at a time
                     filters=[
                         aws_lambda.FilterCriteria.filter(
                             {
