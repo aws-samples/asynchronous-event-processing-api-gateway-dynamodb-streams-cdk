@@ -3,14 +3,17 @@
 {
 #foreach($entry in $jobStatusMap.entrySet())
   "$entry.getKey()": {
-    #set($state = $!{entry.getValue().M.state.S})
-    #set($results = $!{entry.getValue().M.results.S})
-    #if($state)
-      "state": "$state",
-    #end
-    #if($results)
-      "results": "$results",
-    #end
-  }
+#set($state = $!{entry.getValue().M.state.S})
+#set($results = $!{entry.getValue().M.results.S})
+#if($state)
+    "state": "$state"#if($results),
 #end
+#end
+#if($results)
+    "results": "$results"
+#end
+  }#if($foreach.hasNext),
+#end
+#end
+
 }
