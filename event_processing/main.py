@@ -56,7 +56,7 @@ def python_obj_to_dynamo_obj(python_obj: dict) -> dict:
 def upsert(id: str, status: dict):
     for retry in range(OPTIMISTIC_LOCKING_RETRY_ATTEMPTS):
         try:
-            logger.info(f"Try number {retry} to update {id}")
+            logger.debug(f"Try number {retry} to update {id}")
 
             # Get existing item and its version
             item = dynamodb.get_item(
@@ -69,12 +69,12 @@ def upsert(id: str, status: dict):
             item_python = dynamo_obj_to_python_obj(item["Item"])
             item_current_version = item_python.get("version")
             item_status = item_python.get("job_status", {})
-            logger.info(f'Current version for {id} is {item_current_version}')
-            logger.info(f'Current status for {id} is {status}')
+            logger.debug(f'Current version for {id} is {item_current_version}')
+            logger.debug(f'Current status for {id} is {status}')
 
             # Set running state for this consumer
             item_status[CONSUMER_ID] = status
-            logger.info(f'Updated status for {id} is {status}')
+            logger.debug(f'Updated status for {id} is {status}')
 
             # Try update
             dynamodb.update_item(
@@ -140,12 +140,12 @@ def handler(event, context) -> None:
         }
     ]
     '''
-    logger.info(event)
-    logger.info(context)
+    logger.debug(event)
+    logger.debug(context)
 
     id = event["Records"][0]["dynamodb"]["NewImage"]["id"]["S"]
     seconds = event["Records"][0]["dynamodb"]["NewImage"]["seconds"]["N"]
-    logger.info(f"Processing {id}...")
+    logger.debug(f"Processing {id}...")
 
     status_running = {
         "state": "running",
