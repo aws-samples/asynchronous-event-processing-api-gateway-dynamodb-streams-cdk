@@ -22,28 +22,6 @@ from tests.fixtures import (
 @fixture
 def dynamodb_stub(event_success: dict) -> Stubber:
     dynamodb_stub = Stubber(dynamodb)
-    parameters = event_success["parameters"]
-    seconds = parameters["seconds"]
-    message = f"I slept for {seconds} seconds"
-
-    dynamodb_stub.add_response(
-        "put_item",
-        expected_params={
-            "Item": {
-                "id": {
-                    "S": "2",
-                },
-                "results": {
-                    "S": f"{{\"message\": \"{message}\"}}",
-                },
-                "status": {
-                    "S": "Success",
-                },
-            },
-            "TableName": "jobs",
-        },
-        service_response=dict(),
-    )
 
     yield dynamodb_stub
 
@@ -51,10 +29,20 @@ def dynamodb_stub(event_success: dict) -> Stubber:
 @fixture
 def event_failure() -> dict:
     event_failure = {
-        "id": "1",
-        "parameters": {
-            "seconds": 301,
-        },
+        "Records": [
+            {
+                "dynamodb": {
+                    "NewImage": {
+                        "id": {
+                            "S": "1",
+                        },
+                        "seconds": {
+                            "N": "301",
+                        },
+                    },
+                },
+            },
+        ],
     }
 
     yield event_failure
@@ -63,10 +51,20 @@ def event_failure() -> dict:
 @fixture
 def event_success() -> dict:
     event_success = {
-        "id": "2",
-        "parameters": {
-            "seconds": 1,
-        },
+        "Records": [
+            {
+                "dynamodb": {
+                    "NewImage": {
+                        "id": {
+                            "S": "2",
+                        },
+                        "seconds": {
+                            "N": "1",
+                        },
+                    },
+                },
+            },
+        ],
     }
 
     yield event_success
@@ -77,8 +75,8 @@ def test_job_processing_failure(
     event_failure: dict,
 ) -> None:
     try:
-        parameters = event_failure["parameters"]
-        seconds = parameters["seconds"]
+        record = event_failure["Records"][0]["dynamodb"]["NewImage"]
+        seconds = record["seconds"]["N"]
         timeout = int(getenv("TIMEOUT"))
 
         handler(event_failure, context)

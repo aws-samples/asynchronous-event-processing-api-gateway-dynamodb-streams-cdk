@@ -18,9 +18,8 @@ def template() -> Template:
     app = App()
     stack = InfrastructureStack(
         app,
-        "AsynchronousProcessingAPIGatewayLambda",
-        description="Asynchronous Processing with API Gateway and Lambda"
-    )
+        "AsynchronousProcessingAPIGatewayDynamoDBStream",
+        description="Asynchronous Processing with API Gateway and DynamoDB Streams")
     template = Template.from_stack(stack)
 
     yield template
