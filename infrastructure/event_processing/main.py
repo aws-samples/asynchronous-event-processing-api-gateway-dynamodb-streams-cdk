@@ -131,48 +131,6 @@ class EventProcessingConstruct(Construct):
             stream=StreamViewType.NEW_IMAGE,
             write_capacity=write_capacity,
         )
-        self.__error_handling_function = Function(
-            self,
-            "ErrorHandlingFunction",
-            code=Code.from_asset(
-                str(
-                    Path(__file__).
-                    parent.
-                    parent.
-                    parent.
-                    joinpath("error_handling").
-                    resolve()
-                ),
-                bundling=BundlingOptions(
-                    command=[
-                        "bash",
-                        "-c",
-                        ("cp /asset-input/main.py "
-                         "--target /asset-output "
-                         "--update"),
-                    ],
-                    image=Runtime.PYTHON_3_9.bundling_image,
-                ),
-            ),
-            environment={
-                "TABLE_NAME": self.jobs_table.table_name,
-            },
-            handler="main.handler",
-            layers=[
-                self.__powertools_layer,
-            ],
-            max_event_age=Duration.seconds(max_event_age),
-            on_failure=EventBridgeDestination(self.__failed_jobs_event_bus),
-            reserved_concurrent_executions=reserved_concurrent_executions,
-            retry_attempts=retry_attempts,
-            runtime=Runtime.PYTHON_3_9,
-            timeout=Duration.seconds(error_handling_timeout),
-        )
-        self.__error_handling_topic = Topic(
-            self,
-            "ErrorHandlingTopic",
-            master_key=self.__error_handling_topic_key,
-        )
 
         for consumer in range(consumers):
             consumer_id = consumer + 1
@@ -213,18 +171,61 @@ class EventProcessingConstruct(Construct):
                 runtime=Runtime.PYTHON_3_9,
                 timeout=Duration.seconds(event_processing_timeout),
             )
+            error_handling_topic = Topic(
+                self,
+                f"ErrorHandling{consumer_id}Topic",
+                master_key=self.__error_handling_topic_key,
+            )
+            error_handling_function = Function(
+                self,
+                f"ErrorHandling{consumer_id}Function",
+                code=Code.from_asset(
+                    str(
+                        Path(__file__).
+                        parent.
+                        parent.
+                        parent.
+                        joinpath("error_handling").
+                        resolve()
+                    ),
+                    bundling=BundlingOptions(
+                        command=[
+                            "bash",
+                            "-c",
+                            ("cp /asset-input/main.py "
+                             "--target /asset-output "
+                             "--update"),
+                        ],
+                        image=Runtime.PYTHON_3_9.bundling_image,
+                    ),
+                ),
+                environment={
+                    "CONSUMER_ID": f"consumer_{consumer_id}",
+                    "OPTIMISTIC_LOCKING_RETRY_ATTEMPTS": str(optmistic_locking_retry_attempts),
+                    "TABLE_NAME": self.jobs_table.table_name,
+                },
+                handler="main.handler",
+                layers=[
+                    self.__powertools_layer,
+                ],
+                max_event_age=Duration.seconds(max_event_age),
+                on_failure=EventBridgeDestination(self.__failed_jobs_event_bus),
+                reserved_concurrent_executions=reserved_concurrent_executions,
+                retry_attempts=retry_attempts,
+                runtime=Runtime.PYTHON_3_9,
+                timeout=Duration.seconds(error_handling_timeout),
+            )
 
             consumer_function.add_event_source(
                 DynamoEventSource(
-                    batch_size=1, # Ensure processing of one event at a time
+                    batch_size=1,  # Ensure processing of one event at a time
                     filters=[
                         aws_lambda.FilterCriteria.filter(
                             {
                                 "eventName": aws_lambda.FilterRule.is_equal("INSERT")}),
                     ],
                     max_record_age=Duration.seconds(max_record_age),
-                    on_failure=SnsDestination(
-                        self.__error_handling_topic),
+                    on_failure=SnsDestination(error_handling_topic),
                     retry_attempts=retry_attempts,
                     starting_position=aws_lambda.StartingPosition.LATEST,
                     table=self.jobs_table,
@@ -251,38 +252,39 @@ class EventProcessingConstruct(Construct):
                     ],
                 },
             )
-            self.__error_handling_topic.grant_publish(consumer_function)
+            error_handling_function.add_event_source(
+                SnsEventSource(error_handling_topic))
+            error_handling_function.node.default_child.add_metadata(
+                "checkov",
+                {
+                    "skip": [
+                        {
+                            "comment": ("This function uses "
+                                        "Lambda Destinations"),
+                            "id": "CKV_AWS_116",
+                        },
+                        {
+                            "comment": ("This function is not meant "
+                                        "to be run inside a VPC"),
+                            "id": "CKV_AWS_117",
+                        },
+                        {
+                            "comment": ("A customer managed key "
+                                        "is not required"),
+                            "id": "CKV_AWS_173",
+                        },
+                    ],
+                },
+            )
+            error_handling_topic.grant_publish(consumer_function)
             self.__error_handling_topic_key.grant_encrypt_decrypt(
                 consumer_function)
             self.jobs_table.grant_read_write_data(consumer_function)
+            self.jobs_table.grant_read_write_data(error_handling_function)
+            self.jobs_table.grant_stream_read(error_handling_function)
 
-        self.__error_handling_function.add_event_source(
-            SnsEventSource(self.__error_handling_topic))
-        self.__error_handling_function.node.default_child.add_metadata(
-            "checkov",
-            {
-                "skip": [
-                    {
-                        "comment": ("This function uses "
-                                    "Lambda Destinations"),
-                        "id": "CKV_AWS_116",
-                    },
-                    {
-                        "comment": ("This function is not meant "
-                                    "to be run inside a VPC"),
-                        "id": "CKV_AWS_117",
-                    },
-                    {
-                        "comment": ("A customer managed key "
-                                    "is not required"),
-                        "id": "CKV_AWS_173",
-                    },
-                ],
-            },
-        )
         self.__failed_jobs_event_bus.archive(
             "FailedJobsEventArchive",
             description="Failed Jobs Event Archive",
             event_pattern=EventPattern(),
         )
-        self.jobs_table.grant_read_write_data(self.__error_handling_function)

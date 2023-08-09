@@ -5,8 +5,8 @@ from boto3 import (
     client,
 )
 from boto3.dynamodb.types import (
-    TypeSerializer,
     TypeDeserializer,
+    TypeSerializer,
 )
 from os import (
     getenv,
@@ -14,35 +14,37 @@ from os import (
 from time import (
     sleep,
 )
-import traceback
 
 CONSUMER_ID = getenv("CONSUMER_ID")
 OPTIMISTIC_LOCKING_RETRY_ATTEMPTS = int(
     getenv("OPTIMISTIC_LOCKING_RETRY_ATTEMPTS"))
 TABLE_NAME = getenv("TABLE_NAME")
 TIMEOUT = int(getenv("TIMEOUT"))
-
 dynamodb = client("dynamodb")
 logger = Logger(
-    level=getenv("LOG_LEVEL", "INFO"),
+    level=getenv("LOG_LEVEL", "DEBUG"),
     service="jobs_processing",
 )
 
 
-def event_processing(seconds: int) -> str:
-    message = f"I slept for {seconds} seconds"
-    if seconds > TIMEOUT:
-        raise ValueError(f"{seconds} major then {TIMEOUT}")
-    sleep(seconds)
-    return message
-
-
 def dynamo_obj_to_python_obj(dynamo_obj: dict) -> dict:
     deserializer = TypeDeserializer()
+
     return {
         k: deserializer.deserialize(v)
         for k, v in dynamo_obj.items()
     }
+
+
+def event_processing(seconds: int) -> str:
+    message = f"I slept for {seconds} seconds"
+
+    if seconds > TIMEOUT:
+        raise ValueError(f"{seconds} major then {TIMEOUT}")
+
+    sleep(seconds)
+
+    return message
 
 
 def python_obj_to_dynamo_obj(python_obj: dict) -> dict:
@@ -56,52 +58,62 @@ def python_obj_to_dynamo_obj(python_obj: dict) -> dict:
 def upsert(id: str, status: dict):
     for retry in range(OPTIMISTIC_LOCKING_RETRY_ATTEMPTS):
         try:
-            logger.debug(f"Try number {retry} to update {id}")
+            logger.debug(f"Try number {retry + 1} to update {id}")
 
             # Get existing item and its version
             item = dynamodb.get_item(
                 TableName=TABLE_NAME,
                 Key={
-                    'id': {
-                        'S': id,
+                    "id": {
+                        "S": id,
                     }}
             )
             item_python = dynamo_obj_to_python_obj(item["Item"])
             item_current_version = item_python.get("version")
             item_status = item_python.get("job_status", {})
-            logger.debug(f'Current version for {id} is {item_current_version}')
-            logger.debug(f'Current status for {id} is {status}')
 
-            # Set running state for this consumer
+            logger.debug(f"Current version for {id} is {item_current_version}")
+            logger.debug(f"Current status for {id} is {status}")
+
+            # Set status for this consumer
             item_status[CONSUMER_ID] = status
-            logger.debug(f'Updated status for {id} is {status}')
 
-            # Try update
+            logger.debug(f"Updated status for {id} is {status}")
+
+            # Try update DynamoDB item
             dynamodb.update_item(
-                TableName=TABLE_NAME,
+                # Optimistic locking condition
+                #
+                # The upstream version should be the same
+                # this item, otherwise throw an exception
+                ConditionExpression="version = :cv",
+                ExpressionAttributeValues={
+                    ":cv": {"N": str(item_current_version)},
+                    ":s": {"M": python_obj_to_dynamo_obj(item_status)},
+                    ":v": {"N": str(item_current_version + 1)},
+                },
                 Key={
                     "id": {
                         "S": id,
-                    }},
-                # Optimistic locking condition - the upstream version should be the same
-                # when updating this item, otherwise throw an exception
-                ConditionExpression=f"version = :cv",
-                UpdateExpression=f"SET job_status=:s, version=:v",
-                ExpressionAttributeValues={
-                    ':s': {"M": python_obj_to_dynamo_obj(item_status)},
-                    ':v': {"N": str(item_current_version + 1)},
-                    ':cv': {"N": str(item_current_version)}
+                    },
                 },
-                ReturnValues="UPDATED_NEW"
+                ReturnValues="UPDATED_NEW",
+                TableName=TABLE_NAME,
+                UpdateExpression=f"SET job_status=:s, version=:v",
             )
-        except Exception as e:
-            logger.error(e)
-            traceback.print_exc()
-        break
+
+            # Exit when update is successful
+            break
+        except Exception as exception:
+            logger.error(exception)
+
+        # Exit when retry > max attempts
+        if retry > OPTIMISTIC_LOCKING_RETRY_ATTEMPTS:
+            break
 
 
 def handler(event, context) -> None:
-    '''
+    """
     The input event is in the following format:
 
     "Records": [
@@ -139,23 +151,24 @@ def handler(event, context) -> None:
             "eventSourceARN": "arn:aws:dynamodb:us-east-1:xxxxxxxxx:table/AsynchronousProcessingAPIGatewayDynamoDBStream-EventProcessingJobsTablexxxxxxxxx/stream/2023-06-27T15:24:31.102"
         }
     ]
-    '''
-    logger.debug(event)
+    """
     logger.debug(context)
+    logger.debug(event)
 
     id = event["Records"][0]["dynamodb"]["NewImage"]["id"]["S"]
     seconds = event["Records"][0]["dynamodb"]["NewImage"]["seconds"]["N"]
-    logger.debug(f"Processing {id}...")
+
+    logger.debug(f"Processing {id}")
 
     status_running = {
-        "state": "running",
+        "status": "Running",
     }
+
     upsert(id, status=status_running)
 
-    results = event_processing(int(seconds))
-
     status_done = {
-        "state": "done",
-        "results": results,
+        "results": event_processing(int(seconds)),
+        "status": "Success",
     }
+
     upsert(id, status=status_done)
