@@ -39,7 +39,7 @@ def dynamo_obj_to_python_obj(dynamo_obj: dict) -> dict:
     }
 
 
-def get_job_id(message: dict) -> str:
+def get_record(message: dict) -> str:
     batch_info = message["DDBStreamBatchInfo"]
     shard_iterator = dynamodbstreams.get_shard_iterator(
         SequenceNumber=batch_info["startSequenceNumber"],
@@ -51,13 +51,8 @@ def get_job_id(message: dict) -> str:
         Limit=1,  # Only one event at a time is processed
         ShardIterator=shard_iterator["ShardIterator"],
     )
-    keys = record["Records"][0]["dynamodb"]["Keys"]
-    item = dynamodb.get_item(
-        Key=keys,
-        TableName=TABLE_NAME,
-    )
 
-    return item["Item"]["id"]["S"]
+    return record["Records"][0]["dynamodb"]["NewImage"]
 
 
 def python_obj_to_dynamo_obj(python_obj: dict) -> dict:
@@ -131,11 +126,15 @@ def handler(event: dict, context: LambdaContext) -> None:
     logger.debug(event)
 
     message = loads(event["Records"][0]["Sns"]["Message"])
+    record = get_record(message)
+    id = record["id"]["S"]
+    seconds = record["seconds"]["N"]
 
     logger.debug(f"Processing {id}")
 
     status_failure = {
+        "seconds": seconds,
         "status": "Failure",
     }
 
-    upsert(get_job_id(message), status_failure)
+    upsert(id, status_failure)
