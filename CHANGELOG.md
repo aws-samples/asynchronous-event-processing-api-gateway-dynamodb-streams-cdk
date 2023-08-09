@@ -1,3 +1,10 @@
+## 1.1.1 (2023-08-09)
+
+### Fix
+
+- adjust number of resources in infra tests
+- refactor error handling tests
+
 ## 1.1.0 (2023-08-09)
 
 ### Feat
