@@ -2,15 +2,22 @@
 #set($jobStatusMap = $inputRoot.Item.job_status.M)
 {
 #foreach($entry in $jobStatusMap.entrySet())
-  $entry.getKey(): {
-    #set($state = $!{entry.getValue().M.state.S})
-    #set($results = $!{entry.getValue().M.results.S})
-    #if($state)
-      "state": "$state",
-    #end
-    #if($results)
-      "results": "$results",
-    #end
-  }
+  "$entry.getKey()": {
+#set($results = $!{entry.getValue().M.results.S})
+#set($seconds = $!{entry.getValue().M.seconds.S})
+#set($status = $!{entry.getValue().M.status.S})
+#if($results != "")
+    "results": "$results"#if($status != ""),
 #end
+#end
+#if($seconds != "")
+    "seconds": $seconds,
+#end
+#if($status != "")
+    "status": "$status"
+#end
+  }#if($foreach.hasNext),
+#end
+#end
+
 }

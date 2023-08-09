@@ -255,8 +255,8 @@ class JobsApiConstruct(Construct):
                         "application/json": dumps({
                             "Item": {
                                 "id": {"S": "$context.requestId"},
-                                "seconds": {"N": "$input.path('$.seconds')"},
                                 "job_status": {"M": {}},
+                                "seconds": {"N": "$input.path('$.seconds')"},
                                 "version": {"N": "0"},
                             },
                             "TableName": jobs_table.table_name,

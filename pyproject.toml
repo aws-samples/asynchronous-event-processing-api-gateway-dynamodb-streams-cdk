@@ -13,10 +13,12 @@ exclude_dirs = [
 [tool.commitizen]
 bump_message = "chore(release): $new_version"
 update_changelog_on_bump = true
-version = "1.0.0"
+version = "1.1.0"
 
 [tool.pytest.ini_options]
 env = [
+  "CONSUMER_ID=consumer_1",
+  "OPTIMISTIC_LOCKING_RETRY_ATTEMPTS=1",
   "TABLE_NAME=jobs",
   "TIMEOUT=300",
 ]
