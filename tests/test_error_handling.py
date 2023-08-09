@@ -6,10 +6,12 @@ from botocore.stub import (
 )
 from error_handling.main import (
     dynamodb,
+    dynamodbstreams,
     handler,
 )
 from json import (
     dumps,
+    loads,
 )
 from pytest import (
     fixture,
@@ -22,39 +24,73 @@ from tests.fixtures import (
 @fixture
 def dynamodb_stub(event: dict) -> Stubber:
     dynamodb_stub = Stubber(dynamodb)
-    parameters = event["requestPayload"]["parameters"]
-
-    dynamodb_stub.add_response(
-        "put_item",
-        expected_params={
-            "Item": {
-                "id": {
-                    "S": "1",
-                },
-                "parameters": {
-                    "S": dumps(parameters),
-                },
-                "status": {
-                    "S": "Failure",
-                },
-            },
-            "TableName": "jobs",
-        },
-        service_response=dict(),
-    )
 
     yield dynamodb_stub
 
 
 @fixture
-def event() -> dict:
-    event = {
-        "requestPayload": {
-            "id": "1",
-            "parameters": {
-                "seconds": 301,
-            },
+def dynamodbstreams_stub(event: dict) -> Stubber:
+    dynamodbstreams_stub = Stubber(dynamodbstreams)
+    message = loads(event["Records"][0]["Sns"]["Message"])
+    batch_info = message["DDBStreamBatchInfo"]
+    shard_iterator = "000000000000000000000000"
+
+    dynamodbstreams_stub.add_response(
+        "get_shard_iterator",
+        expected_params={
+            "SequenceNumber": batch_info["startSequenceNumber"],
+            "ShardId": batch_info["shardId"],
+            "ShardIteratorType": "AT_SEQUENCE_NUMBER",
+            "StreamArn": batch_info["streamArn"],
         },
+        service_response={
+            "ShardIterator": shard_iterator,
+        },
+    )
+    dynamodbstreams_stub.add_response(
+        "get_records",
+        expected_params={
+            "Limit": 1,
+            "ShardIterator": shard_iterator,
+        },
+        service_response={
+            "Records": [
+                {
+                    "dynamodb": {
+                        "NewImage": {
+                            "id": {
+                                "S": "1",
+                            },
+                            "seconds": {
+                                "N": "301",
+                            },
+                        },
+                    },
+                },
+            ],
+        },
+    )
+
+    yield dynamodbstreams_stub
+
+
+@fixture
+def event() -> dict:
+    message = {
+        "DDBStreamBatchInfo": {
+            "startSequenceNumber": "000000000000000000000000",
+            "shardId": "shardId-00000000000000000000",
+            "streamArn": "arn:aws:dynamodb:us-east-1:012356789012:table/jobs/stream/0",
+        },
+    }
+    event = {
+        "Records": [
+            {
+                "Sns": {
+                    "Message": dumps(message),
+                },
+            },
+        ],
     }
 
     yield event
@@ -63,7 +99,8 @@ def event() -> dict:
 def test_error_handling(
     context: LambdaContext,
     dynamodb_stub: Stubber,
+    dynamodbstreams_stub: Stubber,
     event: dict,
 ) -> None:
-    with dynamodb_stub:
+    with dynamodb_stub, dynamodbstreams_stub:
         handler(event, context)
