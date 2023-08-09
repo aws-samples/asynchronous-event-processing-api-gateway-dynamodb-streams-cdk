@@ -154,7 +154,7 @@ def test_jobs_functions_are_setup(template: Template) -> None:
         },
     })
     template.resource_count_is("AWS::Events::EventBus", 1)
-    template.resource_count_is("AWS::Lambda::EventInvokeConfig", 3)
+    template.resource_count_is("AWS::Lambda::EventInvokeConfig", 2)
 
 
 def test_jobs_table_is_setup(template: Template) -> None:
