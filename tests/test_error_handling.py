@@ -24,6 +24,69 @@ from tests.fixtures import (
 @fixture
 def dynamodb_stub(event: dict) -> Stubber:
     dynamodb_stub = Stubber(dynamodb)
+    id = "1"
+
+    dynamodb_stub.add_response(
+        "get_item",
+        expected_params={
+            "Key": {
+                "id": {
+                    "S": id,
+                },
+            },
+            "TableName": "jobs",
+        },
+        service_response={
+            "Item": {
+                "id": {
+                    "S": id,
+                },
+                "job_status": {
+                    "M": dict(),
+                },
+                "version": {
+                    "N": "1",
+                },
+            },
+        },
+    )
+    dynamodb_stub.add_response(
+        "update_item",
+        expected_params={
+            "ConditionExpression": "version = :cv",
+            "ExpressionAttributeValues": {
+                ":cv": {
+                    "N": "1",
+                },
+                ":s": {
+                    "M": {
+                        "consumer_1": {
+                            "M": {
+                                "seconds": {
+                                    "S": "301",
+                                },
+                                "status": {
+                                    "S": "Failure",
+                                },
+                            },
+                        },
+                    },
+                },
+                ":v": {
+                    "N": "2",
+                },
+            },
+            "Key": {
+                "id": {
+                    "S": id,
+                },
+            },
+            "ReturnValues": "UPDATED_NEW",
+            "TableName": "jobs",
+            "UpdateExpression": f"SET job_status=:s, version=:v",
+        },
+        service_response=dict(),
+    )
 
     yield dynamodb_stub
 

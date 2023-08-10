@@ -1,3 +1,13 @@
+## 1.2.0 (2023-08-10)
+
+### Feat
+
+- update architecture and README
+
+### Fix
+
+- add additional stubs to tests
+
 ## 1.1.1 (2023-08-09)
 
 ### Fix
