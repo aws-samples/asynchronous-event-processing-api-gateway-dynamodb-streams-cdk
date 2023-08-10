@@ -17,9 +17,10 @@ A typical workflow looks as following:
 
 If the event processing fails:
 
-1. The event processing function sends the event to the error handling function
-2. The error handling function puts the job parameters in the jobs Amazon DynamoDB table
-3. The user can retrieve the job parameters by doing an HTTP GET request to the `/jobs/{jobId}` jobs API endpoint
+1. The event processing function source mapping sends the event to the error handling SNS topic
+2. The event processing SNS topic pushes asynchronously the event to the event processing function
+3. The error handling function puts the job parameters in the jobs Amazon DynamoDB table
+4. The user can retrieve the job parameters by doing an HTTP GET request to the `/jobs/{jobId}` jobs API endpoint
 
 If the error handling fails:
 
@@ -30,9 +31,11 @@ If the error handling fails:
 
 Install on your workstation the following tools:
 
-- [AWS CDK Toolkit](https://docs.aws.amazon.com/cdk/v2/guide/cli.html) version `2.85.0`;
-- [Node.js](https://nodejs.org/en/download/) version `18.13.0`;
-- [Projen](https://pypi.org/project/projen/) version `0.71.111`.
+- [AWS CDK Toolkit](https://docs.aws.amazon.com/cdk/v2/guide/cli.html) version `2.85.0`
+- [Docker](https://docs.docker.com/get-docker/) version `20.10.21`
+- [Node.js](https://nodejs.org/en/download/) version `18.13.0`
+- [Projen](https://pypi.org/project/projen/) version `0.71.111`
+- [Python](https://www.python.org/downloads/) version `3.9.16`
 
 ## Setup
 
