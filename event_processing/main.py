@@ -55,18 +55,19 @@ def python_obj_to_dynamo_obj(python_obj: dict) -> dict:
     }
 
 
-def upsert(id: str, status: dict):
+def upsert(id: str, status: dict) -> None:
     for retry in range(OPTIMISTIC_LOCKING_RETRY_ATTEMPTS):
         try:
-            logger.debug(f"Try number {retry + 1} to update {id}")
+            logger.debug(f"Retry number {retry + 1} to update {id}")
 
             # Get existing item and its version
             item = dynamodb.get_item(
-                TableName=TABLE_NAME,
                 Key={
                     "id": {
                         "S": id,
-                    }}
+                    }
+                },
+                TableName=TABLE_NAME,
             )
             item_python = dynamo_obj_to_python_obj(item["Item"])
             item_current_version = item_python.get("version")
@@ -82,15 +83,18 @@ def upsert(id: str, status: dict):
 
             # Try update DynamoDB item
             dynamodb.update_item(
-                # Optimistic locking condition
-                #
-                # The upstream version should be the same
-                # this item, otherwise throw an exception
+                # Optimistic locking
                 ConditionExpression="version = :cv",
                 ExpressionAttributeValues={
-                    ":cv": {"N": str(item_current_version)},
-                    ":s": {"M": python_obj_to_dynamo_obj(item_status)},
-                    ":v": {"N": str(item_current_version + 1)},
+                    ":cv": {
+                        "N": str(item_current_version),
+                    },
+                    ":s": {
+                        "M": python_obj_to_dynamo_obj(item_status),
+                    },
+                    ":v": {
+                        "N": str(item_current_version + 1),
+                    },
                 },
                 Key={
                     "id": {
@@ -102,14 +106,16 @@ def upsert(id: str, status: dict):
                 UpdateExpression=f"SET job_status=:s, version=:v",
             )
 
-            # Exit when update is successful
-            break
+            # Return when update is successful
+            return
+        except dynamodb.exceptions.ConditionalCheckFailedException:
+            logger.warning("Failed to acquire lock, retrying")
         except Exception as exception:
-            logger.error(exception)
+            raise exception
 
-        # Exit when retry > max attempts
-        if retry > OPTIMISTIC_LOCKING_RETRY_ATTEMPTS:
-            break
+    # Raise error when retry > max attempts
+    raise RuntimeError(
+        f"Max number of retries {OPTIMISTIC_LOCKING_RETRY_ATTEMPTS} exceeded")
 
 
 def handler(event, context) -> None:
